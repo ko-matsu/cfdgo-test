@@ -1,4 +1,4 @@
-module github.com/ko-matsu/cfd_tool
+module github.com/ko-matsu/cfdgo-test
 
 go 1.13
 
