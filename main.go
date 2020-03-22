@@ -5,21 +5,22 @@ import (
     "time"
     "github.com/pkg/profile"
 )
-import cfd "github.com/cryptogarageinc/cfd-go"
+import cfd "github.com/ko-matsu/cfd-go"
 //     "encoding/hex"
 
 func main() {
     defer profile.Start(profile.ProfilePath(".")).Stop()
 
     fmt.Println("start")
-    // TestCfdCreateLargeTransaction()
-    TestCfdCreateLargeBlindTransaction()
+    TestCfdCreateLargeTransaction()
+    // CreateBasicTransaction()
+    // TestCfdCreateLargeBlindTransaction()
     fmt.Println("end. finishing...")
     time.Sleep(10 * time.Second) // GC wait
     fmt.Println("finish")
 }
 
-const maxnum = 257
+const maxnum = 102400
 
 func TestCfdCreateLargeTransaction() {
 	handle := uintptr(0)
@@ -32,15 +33,16 @@ func TestCfdCreateLargeTransaction() {
 	masterXpriv := "tprv8ZgxMBicQKsPe4wfWRxqwNiLTkpLoSvHsKkSP9XXfbV1KVRazP6HNhfDb85caijRwMN8VKFwQu6WeCFjUQGeKk4MTDpHfAahaNHuhUfXhYt"
 	asset := "ef47c42d34de1b06a02212e8061323f50d5f02ceed202f1cb375932aa299f751"
 
-	txHex, err := cfd.CfdGoInitializeConfidentialTx(handle, uint32(2), uint32(0))
+	createTxHandle, err := cfd.CfdGoInitializeConfidentialTransaction(uint32(2), uint32(0))
 	if err != nil {
 		return
 	}
+	defer cfd.CfdGoFreeTransactionHandle(createTxHandle)
 
 	for i := 1; i <= maxTxin; i++ {
 		txid := "00000000000000000000000000000000000000000000000000000000" + fmt.Sprintf("%08x", i)
-		txHex, err = cfd.CfdGoAddConfidentialTxIn(
-			handle, txHex, txid, 0, sequence)
+		err = cfd.CfdGoAddTxInput(
+			createTxHandle, txid, 0, sequence)
 		if err != nil {
 			fmt.Printf("CfdGoAddConfidentialTxIn fail[%s] idx[%d]\n", err.Error(), i)
 			return
@@ -60,9 +62,9 @@ func TestCfdCreateLargeTransaction() {
 			return
 		}
 	
-		txHex, err = cfd.CfdGoAddConfidentialTxOut(
-			handle, txHex, asset, int64(10000000), "",
-			descriptorDataList[0].Address, "", "")
+		err = cfd.CfdGoAddConfidentialTxOutput(
+			createTxHandle, asset, int64(10000000),
+			descriptorDataList[0].Address)
 		if err != nil {
 			fmt.Print("CfdGoAddConfidentialTxOut fail[%s] idx[%d]\n", err.Error(), i)
 			return
@@ -73,6 +75,93 @@ func TestCfdCreateLargeTransaction() {
 		}
 	}
 
+	bip32DerivationPath := fmt.Sprintf("%d", maxTxout)
+	descriptorDataList, _, err := cfd.CfdGoParseDescriptor(handle , descriptor, networkType, bip32DerivationPath)
+	if err != nil {
+		fmt.Print("CfdGoParseDescriptor fail[%s] idx[%d]\n", err.Error(), maxTxout)
+		return
+	}
+	err = cfd.CfdGoAddConfidentialTxOutput(
+		createTxHandle, asset, int64(9900000),
+		descriptorDataList[0].Address)
+	if err != nil {
+		fmt.Printf("CfdGoAddConfidentialTxOut fail[%s] idx[%d]\n", err.Error(), maxTxout)
+		return
+	}
+
+	err = cfd.CfdGoAddConfidentialTxOutputFee(
+		createTxHandle, asset, int64(100000))
+	if err != nil {
+		fmt.Printf("CfdGoAddConfidentialTxOut fail[%s] idx[fee]\n", err.Error())
+		return
+	}
+
+	txHex, err := cfd.CfdGoFinalizeTransaction(createTxHandle)
+	if err != nil {
+		fmt.Printf("CfdGoFinalizeTransaction fail[%s]\n", err.Error())
+		return
+	}
+
+	if err != nil {
+		errMsg, _ := cfd.CfdGoGetLastErrorMessage(handle)
+		fmt.Print("[error message] " + errMsg + "\n")
+	}
+
+	fmt.Printf("txHex = %s \n", txHex)
+	fmt.Print("TestCfdCreateLargeTransaction test done.\n")
+}
+
+func CreateBasicTransaction() (txHex string, err error) {
+	handle := uintptr(0)
+	sequence := (uint32)(cfd.KCfdSequenceLockTimeDisable)
+	networkType := (int)(cfd.KCfdNetworkLiquidv1)
+	maxTxin := maxnum
+	maxTxout := maxnum
+	// mnemonic: accuse traffic neglect mechanic sand page cycle tattoo bonus sheriff field top vote outdoor drop
+	// master xpriv: tprv8ZgxMBicQKsPe4wfWRxqwNiLTkpLoSvHsKkSP9XXfbV1KVRazP6HNhfDb85caijRwMN8VKFwQu6WeCFjUQGeKk4MTDpHfAahaNHuhUfXhYt
+	masterXpriv := "tprv8ZgxMBicQKsPe4wfWRxqwNiLTkpLoSvHsKkSP9XXfbV1KVRazP6HNhfDb85caijRwMN8VKFwQu6WeCFjUQGeKk4MTDpHfAahaNHuhUfXhYt"
+	asset := "ef47c42d34de1b06a02212e8061323f50d5f02ceed202f1cb375932aa299f751"
+
+	txHex, err = cfd.CfdGoInitializeConfidentialTx(handle, uint32(2), uint32(0))
+	if err != nil {
+		return
+	}
+
+	for i := 1; i <= maxTxin; i++ {
+		txid := "00000000000000000000000000000000000000000000000000000000" + fmt.Sprintf("%08x", i)
+		txHex, err = cfd.CfdGoAddConfidentialTxIn(
+			handle, txHex, txid, 0, sequence)
+		if err != nil {
+			fmt.Print("CfdGoAddConfidentialTxIn fail[%s] idx[%d]", err.Error(), i)
+			return
+		}
+
+		if i % 128 == 0 {
+			fmt.Print(" - txin: " + txid + "\n")
+		}
+	}
+
+	descriptor := "pkh(" + masterXpriv + "/0/*)"
+	for i := 1; i < maxTxout; i++ {
+		bip32DerivationPath := fmt.Sprintf("%d", i)
+		descriptorDataList, _, err := cfd.CfdGoParseDescriptor(handle , descriptor, networkType, bip32DerivationPath)
+		if err != nil {
+			fmt.Printf("CfdGoParseDescriptor fail[%s] idx[%d]\n", err.Error(), i)
+			return "", err
+		}
+	
+		txHex, err = cfd.CfdGoAddConfidentialTxOut(
+			handle, txHex, asset, int64(10000000), "",
+			descriptorDataList[0].Address, "", "")
+		if err != nil {
+			fmt.Printf("CfdGoAddConfidentialTxOut fail[%s] idx[%d]\n", err.Error(), i)
+			return "", err
+		}
+
+		if i % 128 == 0 {
+			fmt.Printf(" - txout: %d\n", i)
+		}
+	}
 	bip32DerivationPath := fmt.Sprintf("%d", maxTxout)
 	descriptorDataList, _, err := cfd.CfdGoParseDescriptor(handle , descriptor, networkType, bip32DerivationPath)
 	if err != nil {
@@ -94,15 +183,8 @@ func TestCfdCreateLargeTransaction() {
 		return
 	}
 
-	if err != nil {
-		errMsg, _ := cfd.CfdGoGetLastErrorMessage(handle)
-		fmt.Print("[error message] " + errMsg + "\n")
-	}
-
-	fmt.Printf("txHex = %s \n", txHex)
-	fmt.Print("TestCfdCreateLargeTransaction test done.\n")
+	return txHex, err
 }
-
 
 func CreateBasicBlindTransaction() (txHex string, err error) {
 	handle := uintptr(0)
