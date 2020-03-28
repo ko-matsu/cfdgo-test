@@ -5,7 +5,7 @@ import (
     "time"
     "github.com/pkg/profile"
 )
-import cfd "github.com/ko-matsu/cfd-go"
+import cfd "github.com/cryptogarageinc/cfd-go"
 //     "encoding/hex"
 
 func main() {
